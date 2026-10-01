@@ -50,6 +50,7 @@ RUN echo "[build] Cloning Hiddify-Manager (version/branch: ${HIDDIFY_VERSION})..
     rm -rf /opt/hiddify-manager/.git /opt/hiddify-manager/services/panel/src/.git
 
 # --- 3) نصب Hiddify در حالت داکر ---------------------------------------------
+# fake systemctl خود هیدیفای را نصب می‌کند و سرویس‌ها را آماده می‌سازد.
 RUN mkdir -p /etc/sudoers.d/ /opt/hiddify-manager/data && \
     bash ./scripts/common/hiddify_installer.sh docker --no-gui --no-log || true && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/* && \
@@ -71,11 +72,12 @@ RUN sed -i 's/\r$//' /start.sh /etc/nginx/nginx.conf.template && \
 EXPOSE 3000
 
 # ⚠️ توجه: Railway دستور VOLUME در Dockerfile را پشتیبانی نمی‌کند.
-# Volumeهای پایدار باید از طریق پنل Railway (Settings → Volumes) ساخته شوند
-# و به این مسیرها ماونت شوند:
-#   - /opt/hiddify-manager/data   (داده‌های پنل + SSL + بکاپ)
-#   - /var/lib/mysql              (دیتابیس MariaDB)
-#   - /var/lib/redis              (دیتای Redis — اختیاری)
-# اگر این Volumeها را نسازید، با هر redeploy همه‌چیز پاک می‌شود!
+# ⚠️ فقط یک Volume در پنل Railway بسازید و به این مسیر ماونت کنید:
+#     /opt/hiddify-manager/data
+#   این مسیر شامل داده‌های زیر است (همه داخل همان Volume):
+#     - data/        : داده‌های پنل + SSL + بکاپ
+#     - data/mysql/  : دیتابیس MariaDB
+#     - data/redis/  : دیتای Redis
+# اگر این Volume را نسازید، با هر redeploy همه‌چیز (کاربران + کانفیگ‌ها) پاک می‌شود!
 
 ENTRYPOINT ["/start.sh"]
