@@ -1,0 +1,162 @@
+# =============================================================================
+# nginx.conf.template — Multiplexer برای Hiddify روی Railway
+# =============================================================================
+# Railway فقط یک پورت (PORT=3000) به‌صورت HTTP/TCP در اختیار می‌گذارد.
+# این nginx تمام مسیرها را روی همان یک پورت تجمیع می‌کند:
+#
+#   /admin/     → پنل وب Hiddify          (پنل Flask داخلی)
+#   /sub/       → سابسکرایبشن / کانفیگ‌ها (سرویس sub هیدیفای)
+#   /api/       → REST API پنل
+#   /in1..in50  → اینباندهای WebSocket پروکسی (xray/sing-box)
+#   /           → fallback (صفحه پیش‌فرض)
+#
+# نکته مهم: فقط پروتکل‌های WebSocket/gRPC از پشت HTTP proxy رد می‌شوند.
+# پروتکل‌های Reality / Trojan-over-TLS / VLESS+TLS+TCP کار نخواهند کرد
+# چون Railway خودش TLS را terminate می‌کند.
+# =============================================================================
+
+worker_processes 1;
+events { worker_connections 4096; }
+
+http {
+    # ---------- تشخیص Real-IP کاربر پشت CDN ----------
+    real_ip_header CF-Connecting-IP;
+    real_ip_recursive on;
+
+    # رنج‌های IPv4 Cloudflare
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    # رنج‌های IPv6 Cloudflare
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    # رنج داخلی Railway
+    set_real_ip_from 10.0.0.0/8;
+    set_real_ip_from 172.16.0.0/12;
+
+    # ---------- تنظیمات عمومی ----------
+    sendfile on;
+    keepalive_timeout 65;
+    client_max_body_size 64m;
+    # WebSocket upgrade map
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # ---------- متغیرهای مسیر داخلی هیدیفای ----------
+    # پنل وب هیدیفای در حالت داکر روی 9000 گوش می‌دهد (Flask gunicorn)
+    # اگر در نسخه‌ی شما متفاوت است، اینجا را تغییر دهید.
+    upstream hiddify_panel  { server 127.0.0.1:9000; }
+    upstream hiddify_sub    { server 127.0.0.1:9000; }
+
+    server {
+        listen ${NGINX_PORT} default_server;
+        server_name _;
+
+        # --- لاگ ---
+        access_log /dev/stdout;
+        error_log  /dev/stderr;
+
+        # ===== مسیر پنل مدیریت =====
+        location /admin/ {
+            proxy_pass http://hiddify_panel/admin/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 300s;
+        }
+
+        # ===== REST API پنل =====
+        location /api/ {
+            proxy_pass http://hiddify_panel/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # ===== سابسکرایبشن =====
+        location /sub/ {
+            proxy_pass http://hiddify_sub/sub/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # ===== اینباندهای پروکسی (WebSocket) =====
+        # هر /inN به یک پورت داخلی xray/sing-box نگاشت می‌شود.
+        # شماره پورت‌ها را با پورت‌های اینباندهای داخل پنل هماهنگ کنید.
+        location /in1  { proxy_pass http://127.0.0.1:8001; }
+        location /in2  { proxy_pass http://127.0.0.1:8002; }
+        location /in3  { proxy_pass http://127.0.0.1:8003; }
+        location /in4  { proxy_pass http://127.0.0.1:8004; }
+        location /in5  { proxy_pass http://127.0.0.1:8005; }
+        location /in6  { proxy_pass http://127.0.0.1:8006; }
+        location /in7  { proxy_pass http://127.0.0.1:8007; }
+        location /in8  { proxy_pass http://127.0.0.1:8008; }
+        location /in9  { proxy_pass http://127.0.0.1:8009; }
+        location /in10 { proxy_pass http://127.0.0.1:8010; }
+        location /in11 { proxy_pass http://127.0.0.1:8011; }
+        location /in12 { proxy_pass http://127.0.0.1:8012; }
+        location /in13 { proxy_pass http://127.0.0.1:8013; }
+        location /in14 { proxy_pass http://127.0.0.1:8014; }
+        location /in15 { proxy_pass http://127.0.0.1:8015; }
+        location /in16 { proxy_pass http://127.0.0.1:8016; }
+        location /in17 { proxy_pass http://127.0.0.1:8017; }
+        location /in18 { proxy_pass http://127.0.0.1:8018; }
+        location /in19 { proxy_pass http://127.0.0.1:8019; }
+        location /in20 { proxy_pass http://127.0.0.1:8020; }
+        location /in21 { proxy_pass http://127.0.0.1:8021; }
+        location /in22 { proxy_pass http://127.0.0.1:8022; }
+        location /in23 { proxy_pass http://127.0.0.1:8023; }
+        location /in24 { proxy_pass http://127.0.0.1:8024; }
+        location /in25 { proxy_pass http://127.0.0.1:8025; }
+        location /in26 { proxy_pass http://127.0.0.1:8026; }
+        location /in27 { proxy_pass http://127.0.0.1:8027; }
+        location /in28 { proxy_pass http://127.0.0.1:8028; }
+        location /in29 { proxy_pass http://127.0.0.1:8029; }
+        location /in30 { proxy_pass http://127.0.0.1:8030; }
+
+        # تنظیمات مشترک WebSocket برای همه‌ی /inN
+        location ~ ^/in[0-9]+ {
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_read_timeout 86400s;
+            proxy_send_timeout 86400s;
+        }
+
+        # ===== Fallback =====
+        location / {
+            return 404;
+        }
+    }
+}
