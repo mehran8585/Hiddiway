@@ -1,0 +1,36 @@
+# =============================================================================
+# .gitattributes — کنترل فرمت خط‌شکن‌ها (بسیار مهم برای اسکریپت‌های shell)
+# =============================================================================
+# وقتی فایل‌ها در ویندوز ادیت می‌شوند، خط‌شکن‌ها به CRLF (\r\n) تبدیل می‌شوند
+# که باعث ارور "No such file or directory" در داکر/لینوکس می‌شود.
+# این فایل git را مجبور می‌کند همه‌ی اسکریپت‌ها را به فرمت یونیکس (LF) تبدیل کند.
+# =============================================================================
+
+# --- اسکریپت‌های Shell و تمپلیت‌ها: حتماً LF ---
+*.sh           text eol=lf
+*.template     text eol=lf
+*.bash         text eol=lf
+start.sh       text eol=lf
+
+# --- فایل‌های کانفیگ و env: LF ---
+*.env          text eol=lf
+*.conf         text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
+*.json         text eol=lf
+Dockerfile     text eol=lf
+railway.json   text eol=lf
+
+# --- فایل‌های ویندوزی: CRLF ---
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+*.ps1          text eol=crlf
+
+# --- باینری‌ها (بدون تبدیل) ---
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.ico          binary
+*.zip          binary
+*.tar.gz       binary
