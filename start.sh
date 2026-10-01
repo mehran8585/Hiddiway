@@ -25,13 +25,15 @@ if [ ! -d /var/lib/mysql/mysql ]; then
     echo "[start] First boot: running mariadb-install-db..."
     mariadb-install-db --user=mysql --datadir=/var/lib/mysql 2>&1 | tail -5
 fi
-# استارت MariaDB در background (با log به stdout برای دیباگ Railway)
+# استارت MariaDB در background
+# (هم TCP روی 127.0.0.1 و هم unix socket — برای دسترسی با root از socket استفاده می‌کنیم)
 mysqld_safe --skip-networking=false --bind-address=127.0.0.1 --skip-syslog &
 # صبر تا بالا بیاید (تا ۶۰ ثانیه)
 echo "[start] Waiting for MariaDB to accept connections..."
 MYSQL_READY=false
 for i in $(seq 1 60); do
-    if mariadb-admin ping -h 127.0.0.1 --silent 2>/dev/null; then
+    # استفاده از unix socket (نه TCP) برای جلوگیری از خطای access denied
+    if mariadb-admin --protocol=socket ping 2>/dev/null; then
         MYSQL_READY=true
         echo "[start] MariaDB is ready (after ${i}s)."
         break
@@ -44,7 +46,9 @@ if [ "$MYSQL_READY" != "true" ]; then
 fi
 
 # ساخت کاربر/دیتابیس هیدیفای (با مقادیر docker.env)
-mariadb -h 127.0.0.1 <<SQL || true
+# ⚠️ مهم: از socket استفاده می‌کنیم (نه TCP) چون MariaDB root فقط از طریق
+# unix_socket auth کار می‌کنه و با -h 127.0.0.1 ارور "Access denied" میده.
+mariadb --protocol=socket <<SQL || true
 CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\`;
 CREATE USER IF NOT EXISTS '$MYSQL_USER'@'127.0.0.1' IDENTIFIED BY '$MYSQL_PASSWORD';
 CREATE USER IF NOT EXISTS '$MYSQL_USER'@'localhost' IDENTIFIED BY '$MYSQL_PASSWORD';
@@ -80,19 +84,38 @@ done
 # ---------- استارت Hiddify با fake systemctl خودش ----------
 echo "[start] Booting Hiddify-Manager (docker mode)..."
 # docker-init.sh خود هیدیفای fake systemctl را نصب می‌کند و سرویس‌ها را بالا می‌آورد.
-bash /opt/hiddify-manager/scripts/docker-init.sh --no-gui &
+# خروجی را لاگ می‌کنیم تا در صورت خطا، علت را ببینیم.
+bash /opt/hiddify-manager/scripts/docker-init.sh --no-gui 2>&1 | tee /tmp/hiddify-init.log &
 HIDDIFY_PID=$!
 
-# صبر تا پنل بالا بیاید (Flask معمولاً روی پورت 9000 یا 9001 گوش می‌دهد)
-echo "[start] Waiting for Hiddify panel to be ready..."
-for i in $(seq 1 60); do
+# صبر تا پنل بالا بیاید (Hiddify panel روی پورت 9000 در حالت داکر)
+echo "[start] Waiting for Hiddify panel to be ready (up to 120s)..."
+PANEL_UP=false
+for i in $(seq 1 120); do
+    # چک کردن چند پورت احتمالی پنل
     if curl -sf http://127.0.0.1:9000/ >/dev/null 2>&1 || \
-       curl -sf http://127.0.0.1:9001/ >/dev/null 2>&1; then
-        echo "[start] Hiddify panel is up."
+       curl -sf http://127.0.0.1:9001/ >/dev/null 2>&1 || \
+       curl -sf http://127.0.0.1:8080/ >/dev/null 2>&1; then
+        PANEL_UP=true
+        echo "[start] Hiddify panel is up (after ${i}s)."
         break
+    fi
+    # هر ۱۵ ثانیه یه لاگ وضعیت
+    if [ $((i % 15)) -eq 0 ]; then
+        echo "[start] ...still waiting (${i}s). Checking listening ports:"
+        ss -tlnp 2>/dev/null | grep -E ":(9000|9001|8080|80|443|8001|8002)" || \
+        netstat -tlnp 2>/dev/null | grep -E ":(9000|9001|8080|80|443|8001|8002)" || \
+        echo "[start] (no relevant ports listening yet)"
     fi
     sleep 1
 done
+
+if [ "$PANEL_UP" != "true" ]; then
+    echo "[start] WARNING: Hiddify panel did not respond on expected ports after 120s."
+    echo "[start] Last 30 lines of Hiddify init log:"
+    tail -30 /tmp/hiddify-init.log 2>/dev/null || echo "(no log)"
+    echo "[start] Continuing anyway — nginx will start but panel may not work."
+fi
 
 # ---------- تولید nginx.conf از تمپلیت ----------
 echo "[start] Generating nginx.conf (port ${NGINX_PORT})..."
