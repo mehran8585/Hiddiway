@@ -37,7 +37,6 @@ RUN apt-get update && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 # --- 2) کلون سورس Hiddify-Manager در زمان build -----------------------------
-# (مزایا: ریپو گیت‌هاب شما سبک می‌ماند؛ آپدیت Hiddify فقط با rebuild انجام می‌شود)
 RUN echo "[build] Cloning Hiddify-Manager (version/branch: ${HIDDIFY_VERSION})..." && \
     git clone --depth 1 --branch "${HIDDIFY_VERSION}" \
         https://github.com/hiddify/Hiddify-Manager.git \
@@ -45,7 +44,6 @@ RUN echo "[build] Cloning Hiddify-Manager (version/branch: ${HIDDIFY_VERSION})..
     rm -rf /opt/hiddify-manager/.git
 
 # --- 3) نصب Hiddify در حالت داکر ---------------------------------------------
-# fake systemctl خود هیدیفای را نصب می‌کند و سرویس‌ها را آماده می‌سازد.
 RUN mkdir -p /etc/sudoers.d/ /opt/hiddify-manager/data && \
     bash ./scripts/common/hiddify_installer.sh docker --no-gui --no-log || true && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/* && \
@@ -57,7 +55,11 @@ RUN mkdir -p /etc/sudoers.d/ /opt/hiddify-manager/data && \
 COPY nginx.conf.template  /etc/nginx/nginx.conf.template
 COPY start.sh             /start.sh
 COPY docker.env           /opt/hiddify-manager/docker.env
-RUN chmod +x /start.sh
+
+# ⚠️ مهم: اگر فایل‌ها در ویندوز ادیت شده باشند، خط‌شکن‌ها CRLF می‌شوند
+# و داکر ارور "No such file or directory" می‌دهد. این خط آن‌ها را به LF تبدیل می‌کند.
+RUN sed -i 's/\r$//' /start.sh /etc/nginx/nginx.conf.template && \
+    chmod +x /start.sh
 
 # پورت 3000 = تنها پورت عمومی Railway (هاست داخلی nginx)
 EXPOSE 3000
