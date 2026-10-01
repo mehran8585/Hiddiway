@@ -116,15 +116,17 @@ bash /opt/hiddify-manager/scripts/docker-init.sh --no-gui 2>&1 | tee /tmp/hiddif
 HIDDIFY_PID=$!
 
 # صبر تا پنل بالا بیاید (Hiddify panel روی پورت 9000 در حالت داکر)
+# ⚠️ نکته: از ss/netstat برای چک کردن پورت استفاده می‌کنیم، نه curl.
+# چون پنل هیدیفای روی مسیر / یه 404 برمی‌گردونه (مسیر ادمین مخفی هست)
+# و curl -f اون رو به‌عنوان failure تفسیر می‌کنه.
 echo "[start] Waiting for Hiddify panel to be ready (up to 120s)..."
 PANEL_UP=false
 for i in $(seq 1 120); do
-    # چک کردن چند پورت احتمالی پنل
-    if curl -sf http://127.0.0.1:9000/ >/dev/null 2>&1 || \
-       curl -sf http://127.0.0.1:9001/ >/dev/null 2>&1 || \
-       curl -sf http://127.0.0.1:8080/ >/dev/null 2>&1; then
+    # چک کردن آیا پورت 9000 در حال LISTEN است
+    if ss -tln 2>/dev/null | grep -q ":9000" || \
+       netstat -tln 2>/dev/null | grep -q ":9000"; then
         PANEL_UP=true
-        echo "[start] Hiddify panel is up (after ${i}s)."
+        echo "[start] Hiddify panel is up (port 9000 listening, after ${i}s)."
         break
     fi
     # هر ۱۵ ثانیه یه لاگ وضعیت
@@ -142,6 +144,8 @@ if [ "$PANEL_UP" != "true" ]; then
     echo "[start] Last 30 lines of Hiddify init log:"
     tail -30 /tmp/hiddify-init.log 2>/dev/null || echo "(no log)"
     echo "[start] Continuing anyway — nginx will start but panel may not work."
+else
+    echo "[start] ✅ Hiddify panel is ready! Proceeding to nginx."
 fi
 
 # ---------- تولید nginx.conf از تمپلیت ----------
