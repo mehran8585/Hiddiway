@@ -33,15 +33,21 @@ RUN apt-get update && \
         ca-certificates curl bash sudo gnupg lsb-release \
         nginx gettext tzdata socat \
         mariadb-server redis-server \
-        git jq && \
+        git jq \
+        iproute2 net-tools procps lsof && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 # --- 2) کلون سورس Hiddify-Manager در زمان build -----------------------------
+# (مزایا: ریپو گیت‌هاب شما سبک می‌ماند؛ آپدیت Hiddify فقط با rebuild انجام می‌شود)
+# ⚠️ مهم: Hiddify از git submodules استفاده می‌کند (services/panel/src → Hiddify-Panel)
+# بدون --recurse-submodules، پنل اصلی کلون نمی‌شود و docker-init.sh با خطای
+# "Distribution not found at: .../hiddify-panel/src" کرش می‌کند.
 RUN echo "[build] Cloning Hiddify-Manager (version/branch: ${HIDDIFY_VERSION})..." && \
-    git clone --depth 1 --branch "${HIDDIFY_VERSION}" \
+    git clone --depth 1 --recurse-submodules --shallow-submodules \
+        --branch "${HIDDIFY_VERSION}" \
         https://github.com/hiddify/Hiddify-Manager.git \
         /opt/hiddify-manager/ && \
-    rm -rf /opt/hiddify-manager/.git
+    rm -rf /opt/hiddify-manager/.git /opt/hiddify-manager/services/panel/src/.git
 
 # --- 3) نصب Hiddify در حالت داکر ---------------------------------------------
 RUN mkdir -p /etc/sudoers.d/ /opt/hiddify-manager/data && \
