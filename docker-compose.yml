@@ -3,6 +3,11 @@
 # =============================================================================
 # روی Railway از این فایل استفاده نمی‌شود (Railway مستقیماً Dockerfile را
 # می‌سازد). این فایل صرفاً برای دیباگ لوکال با `docker compose up` است.
+#
+# ⚠️ نکته مهم درباره‌ی Railway:
+#   - Railway دستور `VOLUME` داخل Dockerfile را پشتیبانی نمی‌کند
+#   - Railway از `privileged` و `cap_add: NET_ADMIN` پشتیبانی نمی‌کند
+#   - Volumeها باید از پنل Railway ساخته شوند (Settings → Volumes)
 # =============================================================================
 services:
   hiddify-railway:
@@ -16,12 +21,14 @@ services:
     volumes:
       - hiddify_data:/opt/hiddify-manager/data
       - mysql_data:/var/lib/mysql
-    # توجه: روی Railway این caps در دسترس نیستند. برای شبیه‌سازی محدودیت
-    # Railway در لوکال، خطوط زیر را کامنت کنید.
-    cap_add:
-      - NET_ADMIN
+      - redis_data:/var/lib/redis
+    # برای تست واقعی محدودیت Railway، خطوط cap_add زیر را کامنت کنید.
+    # (Railway اجازه‌ی NET_ADMIN نمی‌دهد)
+    # cap_add:
+    #   - NET_ADMIN
     # privileged: true   # روی Railway مجاز نیست
 
 volumes:
   hiddify_data:
   mysql_data:
+  redis_data:
