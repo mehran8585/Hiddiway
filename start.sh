@@ -7,7 +7,7 @@
 #   2) ساختن nginx.conf از تمپلیت با پورت 3000
 #   3) init دیتابیس Hiddify (اگر اولین بوت است)
 #   4) اجرای fake systemctl → استارت سرویس‌های Hiddify (panel/core/xray/...)
-#      (سرویس‌های firewall و rust-rpxy-l4 به‌خاطر نبود NET_ADMIN غیرفعال می‌شوند)
+#      (سرویس‌های firewall و rust-rpxy-l4 و haproxy به‌خاطر نبود NET_ADMIN/پورت 80-443 غیرفعال می‌شوند)
 #   5) اجرای nginx ما روی پورت 3000 در foreground
 # =============================================================================
 set -e
@@ -97,10 +97,10 @@ export REDIS_URI_MAIN="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/1"
 export HIDDIFY_PROXY_PORT="${NGINX_PORT}"
 
 # ---------- غیرفعال‌کردن سرویس‌هایی که روی Railway کار نمی‌کنند ----------
-# این سرویس‌ها به NET_ADMIN / raw socket / host network نیاز دارند.
-echo "[start] Disabling incompatible services (firewall, rust-rpxy-l4)..."
+# این سرویس‌ها به NET_ADMIN / raw socket / host network / port 80-443 نیاز دارند.
+echo "[start] Disabling incompatible services (firewall, rust-rpxy-l4, haproxy)..."
 SERVICES_DIR=/opt/hiddify-manager/services
-for svc in firewall rust-rpxy-l4; do
+for svc in firewall rust-rpxy-l4 haproxy; do
     if [ -f "$SERVICES_DIR/$svc/disable.sh" ]; then
         bash "$SERVICES_DIR/$svc/disable.sh" || true
     fi
