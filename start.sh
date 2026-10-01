@@ -17,17 +17,31 @@ echo "[start] Railway PORT=${NGINX_PORT}"
 
 # ---------- MariaDB (داخل کانتینر) ----------
 echo "[start] Initializing MariaDB..."
-install -d -o mysql -g mysql /run/mysqld /var/lib/mysql
+# Railway Volume ممکنه owner/root رو روت نگه داره؛ با chown اصلاح می‌کنیم
+mkdir -p /run/mysqld /var/lib/mysql
+chown -R mysql:mysql /run/mysqld /var/lib/mysql 2>/dev/null || true
 # اگر دیتابیس قبلاً init نشده (volume خالی)، آن را راه‌اندازی می‌کنیم
 if [ ! -d /var/lib/mysql/mysql ]; then
-    mariadb-install-db --user=mysql --datadir=/var/lib/mysql >/dev/null 2>&1
+    echo "[start] First boot: running mariadb-install-db..."
+    mariadb-install-db --user=mysql --datadir=/var/lib/mysql 2>&1 | tail -5
 fi
-mysqld_safe --skip-networking=false --bind-address=127.0.0.1 &
-# صبر تا بالا بیاید
-for i in $(seq 1 30); do
-    if mariadb-admin ping -h 127.0.0.1 --silent 2>/dev/null; then break; fi
+# استارت MariaDB در background (با log به stdout برای دیباگ Railway)
+mysqld_safe --skip-networking=false --bind-address=127.0.0.1 --skip-syslog &
+# صبر تا بالا بیاید (تا ۶۰ ثانیه)
+echo "[start] Waiting for MariaDB to accept connections..."
+MYSQL_READY=false
+for i in $(seq 1 60); do
+    if mariadb-admin ping -h 127.0.0.1 --silent 2>/dev/null; then
+        MYSQL_READY=true
+        echo "[start] MariaDB is ready (after ${i}s)."
+        break
+    fi
     sleep 1
 done
+if [ "$MYSQL_READY" != "true" ]; then
+    echo "[start] ERROR: MariaDB did not become ready in 60s. Aborting."
+    exit 1
+fi
 
 # ساخت کاربر/دیتابیس هیدیفای (با مقادیر docker.env)
 mariadb -h 127.0.0.1 <<SQL || true
