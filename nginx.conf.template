@@ -1,18 +1,15 @@
 # =============================================================================
 # nginx.conf.template — Multiplexer برای Hiddify روی Railway
 # =============================================================================
-# Railway فقط یک پورت (PORT=3000) به‌صورت HTTP/TCP در اختیار می‌گذارد.
+# Railway فقط یک پورت (PORT=8080) به‌صورت HTTP/TCP در اختیار می‌گذارد.
 # این nginx تمام مسیرها را روی همان یک پورت تجمیع می‌کند:
 #
-#   /admin/     → پنل وب Hiddify          (پنل Flask داخلی)
-#   /sub/       → سابسکرایبشن / کانفیگ‌ها (سرویس sub هیدیفای)
-#   /api/       → REST API پنل
-#   /in1..in50  → اینباندهای WebSocket پروکسی (xray/sing-box)
-#   /           → fallback (صفحه پیش‌فرض)
+#   /in1..in30  → اینباندهای WebSocket پروکسی (xray/sing-box)
+#   /            → پنل Hiddify (شامل admin secret path, API, subscription)
 #
-# نکته مهم: فقط پروتکل‌های WebSocket/gRPC از پشت HTTP proxy رد می‌شوند.
-# پروتکل‌های Reality / Trojan-over-TLS / VLESS+TLS+TCP کار نخواهند کرد
-# چون Railway خودش TLS را terminate می‌کند.
+# ⚠️ نکته مهم: هیدیفای یه مسیر مخفی رندوم برای پنل ادمین تولید می‌کنه
+#   مثل: /Dp0FZReS3G5zoJ4b3crmDKRHC/75920250-.../
+#   برای همین nginx همه‌چیز رو به پنل پروکسی می‌کنه (به‌جز /inN).
 # =============================================================================
 
 worker_processes 1;
@@ -61,11 +58,9 @@ http {
         ''      close;
     }
 
-    # ---------- متغیرهای مسیر داخلی هیدیفای ----------
+    # ---------- upstream پنل هیدیفای ----------
     # پنل وب هیدیفای در حالت داکر روی 9000 گوش می‌دهد (Flask gunicorn)
-    # اگر در نسخه‌ی شما متفاوت است، اینجا را تغییر دهید.
-    upstream hiddify_panel  { server 127.0.0.1:9000; }
-    upstream hiddify_sub    { server 127.0.0.1:9000; }
+    upstream hiddify_panel { server 127.0.0.1:9000; }
 
     server {
         listen ${NGINX_PORT} default_server;
@@ -75,42 +70,9 @@ http {
         access_log /dev/stdout;
         error_log  /dev/stderr;
 
-        # ===== مسیر پنل مدیریت =====
-        location /admin/ {
-            proxy_pass http://hiddify_panel/admin/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_read_timeout 300s;
-        }
-
-        # ===== REST API پنل =====
-        location /api/ {
-            proxy_pass http://hiddify_panel/api/;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # ===== سابسکرایبشن =====
-        location /sub/ {
-            proxy_pass http://hiddify_sub/sub/;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
         # ===== اینباندهای پروکسی (WebSocket) =====
+        # این‌ها باید قبل از location / بیایند تا اول match بشن
         # هر /inN به یک پورت داخلی xray/sing-box نگاشت می‌شود.
-        # شماره پورت‌ها را با پورت‌های اینباندهای داخل پنل هماهنگ کنید.
         location /in1  { proxy_pass http://127.0.0.1:8001; }
         location /in2  { proxy_pass http://127.0.0.1:8002; }
         location /in3  { proxy_pass http://127.0.0.1:8003; }
@@ -154,9 +116,21 @@ http {
             proxy_send_timeout 86400s;
         }
 
-        # ===== Fallback =====
+        # ===== پنل هیدیفای (catch-all) =====
+        # همه‌ی مسیرهای دیگر (شامل admin secret path, /admin/, /api/, /sub/)
+        # به پنل هیدیفای روی پورت 9000 پروکسی می‌شوند.
         location / {
-            return 404;
+            proxy_pass http://hiddify_panel;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            client_max_body_size 64m;
         }
     }
 }
