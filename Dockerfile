@@ -62,7 +62,12 @@ RUN chmod +x /start.sh
 # پورت 3000 = تنها پورت عمومی Railway (هاست داخلی nginx)
 EXPOSE 3000
 
-# مسیر پایداری داده‌ها روی Railway Volume (در railway.json ماونت می‌شود)
-VOLUME ["/opt/hiddify-manager/data", "/var/lib/mysql"]
+# ⚠️ توجه: Railway دستور VOLUME در Dockerfile را پشتیبانی نمی‌کند.
+# Volumeهای پایدار باید از طریق پنل Railway (Settings → Volumes) ساخته شوند
+# و به این مسیرها ماونت شوند:
+#   - /opt/hiddify-manager/data   (داده‌های پنل + SSL + بکاپ)
+#   - /var/lib/mysql              (دیتابیس MariaDB)
+#   - /var/lib/redis              (دیتای Redis — اختیاری)
+# اگر این Volumeها را نسازید، با هر redeploy همه‌چیز پاک می‌شود!
 
 ENTRYPOINT ["/start.sh"]
